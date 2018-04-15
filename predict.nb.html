@@ -174,8 +174,18 @@ $(document).ready(function () {
 
 <!-- rnb-text-begin -->
 <!-- rnb-text-end -->
+<!-- rnb-chunk-begin -->
+<!-- rnb-source-begin eyJkYXRhIjoiYGBgclxuI0ltcG9ydCBkYXRhIHNldCBmcm9tIHVybDogaHR0cHM6Ly93d3cua2FnZ2xlLmNvbS9rZW1pY2FsL2tpY2tzdGFydGVyLXByb2plY3RzL2RhdGFcbnVybDEgPC0gXCIvVXNlcnMvdGFtdnUvRFM0MTAwL0tpY2tzdGFydGVyIFByZWRpY3QvU3RhcnR1cCBQcmVkaWN0aW9uL2tpY2tzdGFydGVyLXByb2plY3RzL2tzLXByb2plY3RzLTIwMTgwMS5jc3ZcIlxudXJsMiA8LSBcIi9Vc2Vycy90YW12dS9EUzQxMDAvS2lja3N0YXJ0ZXIgUHJlZGljdC9TdGFydHVwIFByZWRpY3Rpb24va2lja3N0YXJ0ZXItcHJvamVjdHMva3MtcHJvamVjdHMtMjAxNjEyLmNzdlwiXG5kZiA8LSByYmluZChhcy5kYXRhLmZyYW1lKHJlYWQuY3N2KHVybDEpKVsxOjEzXSwgYXMuZGF0YS5mcmFtZShyZWFkLmNzdih1cmwyKSlbMToxM10pXG5gYGAifQ== -->
+<pre class="r"><code>#Import data set from url: https://www.kaggle.com/kemical/kickstarter-projects/data
+url1 &lt;- &quot;/Users/tamvu/DS4100/Kickstarter Predict/Startup Prediction/kickstarter-projects/ks-projects-201801.csv&quot;
+url2 &lt;- &quot;/Users/tamvu/DS4100/Kickstarter Predict/Startup Prediction/kickstarter-projects/ks-projects-201612.csv&quot;
+df &lt;- rbind(as.data.frame(read.csv(url1))[1:13], as.data.frame(read.csv(url2))[1:13])</code></pre>
+<!-- rnb-source-end -->
+<!-- rnb-chunk-end -->
+<!-- rnb-text-begin -->
+<!-- rnb-text-end -->
 
-<div id="rmd-source-code">LS0tCnRpdGxlOiAiS2lja1N0YXJ0IFN0YXJ0dXAgVHJlbmQgUHJlZGljdGlvbiIKb3V0cHV0OiBodG1sX25vdGVib29rCi0tLQo=</div>
+<div id="rmd-source-code">LS0tCnRpdGxlOiAiS2lja1N0YXJ0IFN0YXJ0dXAgVHJlbmQgUHJlZGljdGlvbiIKb3V0cHV0OiBodG1sX25vdGVib29rCi0tLQpgYGB7cn0KI0ltcG9ydCBkYXRhIHNldCBmcm9tIHVybDogaHR0cHM6Ly93d3cua2FnZ2xlLmNvbS9rZW1pY2FsL2tpY2tzdGFydGVyLXByb2plY3RzL2RhdGEKdXJsMSA8LSAiL1VzZXJzL3RhbXZ1L0RTNDEwMC9LaWNrc3RhcnRlciBQcmVkaWN0L1N0YXJ0dXAgUHJlZGljdGlvbi9raWNrc3RhcnRlci1wcm9qZWN0cy9rcy1wcm9qZWN0cy0yMDE4MDEuY3N2Igp1cmwyIDwtICIvVXNlcnMvdGFtdnUvRFM0MTAwL0tpY2tzdGFydGVyIFByZWRpY3QvU3RhcnR1cCBQcmVkaWN0aW9uL2tpY2tzdGFydGVyLXByb2plY3RzL2tzLXByb2plY3RzLTIwMTYxMi5jc3YiCmRmIDwtIHJiaW5kKGFzLmRhdGEuZnJhbWUocmVhZC5jc3YodXJsMSkpWzE6MTNdLCBhcy5kYXRhLmZyYW1lKHJlYWQuY3N2KHVybDIpKVsxOjEzXSkKYGBgCgo=</div>
 
 
 

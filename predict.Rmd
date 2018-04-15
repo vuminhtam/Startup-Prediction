@@ -2,3 +2,10 @@
 title: "KickStart Startup Trend Prediction"
 output: html_notebook
 ---
+```{r}
+#Import data set from url: https://www.kaggle.com/kemical/kickstarter-projects/data
+url1 <- "/Users/tamvu/DS4100/Kickstarter Predict/Startup Prediction/kickstarter-projects/ks-projects-201801.csv"
+url2 <- "/Users/tamvu/DS4100/Kickstarter Predict/Startup Prediction/kickstarter-projects/ks-projects-201612.csv"
+df <- rbind(as.data.frame(read.csv(url1))[1:13], as.data.frame(read.csv(url2))[1:13])
+```
+
