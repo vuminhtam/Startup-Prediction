@@ -3,9 +3,247 @@ title: "KickStart Startup Trend Prediction"
 output: html_notebook
 ---
 ```{r}
-#Import data set from url: https://www.kaggle.com/kemical/kickstarter-projects/data
-url1 <- "/Users/tamvu/DS4100/Kickstarter Predict/Startup Prediction/kickstarter-projects/ks-projects-201801.csv"
-url2 <- "/Users/tamvu/DS4100/Kickstarter Predict/Startup Prediction/kickstarter-projects/ks-projects-201612.csv"
-df <- rbind(as.data.frame(read.csv(url1))[1:13], as.data.frame(read.csv(url2))[1:13])
+#UNDERSTAND THE BUSINESS
+#It is important for entrepreneurs to know how likely a project is going to be "sucessful" if launched on Kickstarter
+#possible factors include not meeting minimum funding goal or the category of the product/service. 
+#This project analyzes statistics to find correlation among 13 features of a project 
+#to predict a likelihood of a project to be succesful on Kickstarter - that is fully funded 
 ```
+
+```{r}
+#Import data set from url: https://www.kaggle.com/kemical/kickstarter-projects/data
+#data in 2018
+url1 <- "/Users/tamvu/DS4100/Kickstarter Predict/Startup Prediction/kickstarter-projects/ks-projects-201801.csv"
+raw_df <- as.data.frame(read.csv(url1), na.strings = c("", "NA", "undefined"))
+```
+
+```{r}
+#UNDERSTAND THE DATA
+#There are over 350k entries recorded since April 2009 to December 2017. Total 15 variables 
+#Since ID and names are indentity of the data rather than a factor that determines any outcome, 
+#one of the variable is the actual outcome of the data: sucessful/failed/canceled/live. 
+#the rest are features that can contribute to the state 
+#DEFINE OUTCOME "sucessful": 
+#states of a project recorded into the dataset
+df <- raw_df[sample(nrow(raw_df) * 0.3), ]
+table(df$state)
+#I am only taking into account projects that are not live or suspended (because there is no result to it yet if so) 
+#projects that are not canceled (because the result is not one of the features in the dataset)
+#only projects that is determined with final state (either failed/sucessful)
+```
+
+
+```{r}
+#DATA PREPARATION: CLEANING, IMPUTATION
+#raw data has 378661 entries.
+#MISSING VALUES:
+#check if any variables that have too much missing values
+library(Amelia)
+missmap(df, main = "Missing values")
+#according to the draft of missing values there is no variable that has significant missing values
+#so disregard all entries that have any missing values of any variable 
+#which results in 374864 entries with total 15 features
+df <- na.omit(df)
+```
+
+```{r}
+#CONSTRUCT DATA: calculate the duration of the project
+df$duration <- as.numeric(as.Date(df$deadline) - as.Date(df$launched))
+
+#SHAPE DATA:DUMMY CODE for the catergories
+#1 - Art, 2 - Comics, 3 - Crafts, 4 - Dance, 5 - Design, 6 - Fashion, 7 - Film & Video,
+#8 - Food, 9 - Games, 10 - Journalism, 11 - Music, 12 - Photography, 13 - Publishing, 14 - Technology
+as.data.frame(table(df$main_category))
+df$encode_category <- as.numeric(df$main_category)
+#DUMMY CODE FOR state: successful = 2, failed = 1
+df$encode_state <- as.numeric(df$state)/2 - 1
+#DUMMY CODE FOR country
+df$encode_country <- as.numeric(df$country)
+```
+
+```{r}
+#FILTER DATA to sucessful/failed only. results in 331465 entries
+df <- subset(df, df$state == "failed" | df$state == "successful")
+#OMIT IRRELEVANT variables: ID and names. results in 13 variables: 12 features and 1 that is the state
+#I also omit (sub)category and only consider main_category
+nonvars <- c("ID","name", "category", "goal", "launched", "deadline", "pledged", "state", "currency", "main_category", "country")
+df <- df[,!(names(df) %in% nonvars)]
+```
+
+
+
+
+```{r}
+#EXPLORATORY DATA ANALYSIS: analyze to find important factors that indicate the outcome of successful or failed projects 
+#percentage of sucessful vs failed
+mytable <- as.data.frame(table(df$state) / nrow(df) * 100)
+slices <- c(59.62, 40.38) 
+lbls <- paste(c( "failed", "successful"), slices, "%")
+pie(slices, labels = lbls, main="Pie Chart of Sucessful projects")
+```
+
+
+```{r}
+#EXPLORATORY PLOTS - DETECT AND REMOVE OUTLIERS 
+#function to detetect and remove outliers
+#source https://www.r-bloggers.com/identify-describe-plot-and-remove-the-outliers-from-the-dataset/
+outlierKD <- function(dt, var, str) {
+  var_name <- eval(substitute(var),eval(dt))
+  tot <- sum(!is.na(var_name))
+  na1 <- sum(is.na(var_name))
+  m1 <- mean(var_name, na.rm = T)
+  par(mfrow=c(2, 2), oma=c(0,0,3,0))
+  boxplot(var_name, main="With outliers")
+  hist(var_name, main="With outliers", xlab=NA, ylab=NA)
+  outlier <- boxplot.stats(var_name)$out
+  mo <- mean(outlier)
+  var_name <- ifelse(var_name %in% outlier, NA, var_name)
+  boxplot(var_name, main="Without outliers")
+  hist(var_name, main="Without outliers", xlab=NA, ylab=NA)
+  title(paste("Outlier Check of", str) , outer=TRUE)
+  na2 <- sum(is.na(var_name))
+  message("Outliers identified: ", na2 - na1, " from ", tot, " observations")
+  message("Proportion (%) of outliers: ", (na2 - na1) / tot*100)
+  message("Mean of the outliers: ", mo)
+  m2 <- mean(var_name, na.rm = T)
+  message("Mean without removing outliers: ", m1)
+  message("Mean if we remove outliers: ", m2)
+  response <- "yes"
+  if(response == "y" | response == "yes"){
+    dt[as.character(substitute(var))] <- invisible(var_name)
+    assign(as.character(as.list(match.call())$dt), dt, envir = .GlobalEnv)
+    message("Outliers successfully removed", "\n")
+    return(invisible(dt))
+  } else{
+    message("Nothing changed", "\n")
+    return(invisible(var_name))
+  }
+}
+
+```
+
+
+```{r}
+#remove outliers of number of backers
+outlierKD(df,backers, "number of backers")
+#remove outliers of pledged number
+outlierKD(df, usd.pledged, "USD pledged")
+outlierKD(df,usd_pledged_real, "USD real pledged")
+outlierKD(df,usd_goal_real, "goal in USD")
+```
+
+```{r}
+#NORMALIZATION OF DATA
+
+```
+
+
+```{r}
+df <- na.omit(df)
+#CORRELATION ANALYSIS
+cor(df$usd_goal_real, df$encode_state)
+cor(df$backers, df$encode_state) 
+cor(df$duration, df$encode_state)
+cor(df$usd_pledged_real, df$encode_state)
+# the sucessful projects has lower funding goals, lower duration, 
+# higher number of backers, and higher pledged in USD
+```
+
+```{r}
+#DATA MODELING
+#Create a stratified sample where you randomly select 70% of successful projects to be part of the validation data set. 
+train_Set <- data.frame()
+set.seed(5)
+for(i in 0:1) {
+  all_of_type_i <- subset(df, df$encode_state == i)
+  train_Set <- rbind(train_Set, all_of_type_i[sample(0.7 * nrow(all_of_type_i)),])
+}
+
+#The remaining cases will form the training data set. 
+test_Set <- df[!(as.numeric(row.names(df)) %in% as.numeric(row.names(train_Set))), ]
+```
+
+```{r}
+#function get_accuracy: takes in a model and output the percentage of how correct the prediction 
+get_accuracy <- function(name, model) {
+  prediction <- predict(model, type = "response", newdata = test_Set)
+  prediction <- ifelse(prediction > 0.5,1,0) #set survival = 1
+#and determine its prediction accuracy (as a percentage correct).
+#by comparing the prediction to the test data set survival result
+correctPrediction <- mean(prediction == test_Set$encode_state)
+return(paste('Prediction Accuracy of', name, 'is', correctPrediction * 100, '%'))
+}
+```
+
+```{r}
+#MULTIPLE LINEAR REGRESSION MODEL
+lin_model <- lm(train_Set$encode_state ~ ., data = train_Set)
+summary(lin_model)
+```
+
+```{r}
+#REVISE THE LINEAR REGRESSION
+lin_model <- lm(train_Set$encode_state ~ . - encode_category, data = train_Set)
+summary(lin_model)
+```
+
+```{r}
+#LOGISTIC REGRESSION MODEL
+log_model <- glm(train_Set$encode_state ~ ., data = train_Set)
+summary(log_model)
+```
+
+```{r}
+#REVISE REGRESSION MODEL
+log_model <- glm(train_Set$encode_state ~ . - encode_category, data = train_Set)
+summary(log_model)
+```
+
+
+```{r}
+df <- na.omit(df)
+library('class')
+#TEST OUT K-NN WITH DIFFERENT K
+#Determine an optimal k by trying all values from 5 through 15 for k-NN algorithm against the cases in the validation data set. 
+#Source code: https://www.r-bloggers.com/using-knn-classifier-to-predict-whether-the-price-of-stock-will-increase/
+min <- 5
+max <- 15
+accuracy <- rep(0, max-min+1) #initialize with 0 accuracy
+k <- min:max
+for(x in k){
+  prediction <- knn(train_Set, test_Set, train_Set$encode_state, k = x)
+  accuracy[x] <- mean(prediction == test_Set$encode_state) * 100 #calculate accuracy
+}
+
+#What is the optimal k, i.e., the k that results in the best accuracy? Plot k versus accuracy.
+plot(k, accuracy[min:max], type = 'b', main = "Accuracy by k", xlab = "accuracy (%)")
+```
+
+```{r}
+#Most accurate k = 6. REVISE AND BUILD THE K-NN MODEL WITH K = 6
+pred_validation <- knn(train = train_Set, test = test_Set, train_Set$encode_state, k = 6)
+table(pred_validation, test_Set$encode_state)
+# What is the percentage of correct classifications?
+knn_accuracy <- mean(pred_validation == test_Set$encode_state) * 100
+
+```
+
+```{r}
+#COMPARE THE MODELS
+paste(get_accuracy("Multiple Linear Regression Model", lin_model), "with R-squared is 0.51")
+get_accuracy("Logistic Regression Model", log_model)
+paste("Prediction Accuracy of k-NN Model with k=6 is", knn_accuracy, "%")
+```
+
+```{r}
+#sql queries
+#What is the trendiest product being proposed on Kickstarter over 2015 - 2018?
+hist(df$encode_category)
+#What is the trendiest product being proposed on Kickstarter that is sucessful? 
+
+```
+
+
+
+
 
