@@ -22,7 +22,6 @@ raw_df <- raw_df[sample(nrow(raw_df) * 0.3), ]
 
 ```{r}
 library(RMySQL)
-library(DBI)
 #CONNECT TO MYSQL DATABASE
 awsURL <- "mypersonalinstance.cwoxgifwds2r.us-east-1.rds.amazonaws.com"
 con <- dbConnect(MySQL(),
@@ -123,9 +122,9 @@ SELECT * FROM dataset WHERE state = "live" AND YEAR(deadline) = 2018 ORDER BY mo
 
 ```{r}
 #DATA PREPARATION: CLEANING, IMPUTATION
-#raw data has 378661 entries.
+#raw data has 113 entries.
 #MISSING VALUES: disregard all entries that have any missing values of any variable 
-#which results in 113k entries with total 15 features
+#which results in 112k entries with total 15 features
 df <- na.omit(df)
 ```
 
@@ -156,7 +155,6 @@ df <- subset(df, df$state == "failed" | df$state == "successful")
 #Money variable like goals and pledged I am choosing the columns in USD only so ommit currency and general goal and pledged columns
 nonvars <- c("ID","name", "category", "goal", "launched", "deadline", "pledged", "state", "currency", "main_category", "country", "usd.pledged")
 df <- df[,!(names(df) %in% nonvars)]
-head(df)
 ```
 
 
@@ -296,8 +294,8 @@ library('class')
 #TUNING OF THE K-NN MODEL. 
 #Determine an optimal k by trying all values from 5 through 15 for k-NN algorithm against the cases in the validation data set. 
 #Source code: https://www.r-bloggers.com/using-knn-classifier-to-predict-whether-the-price-of-stock-will-increase/
-min <- 5
-max <- 15
+min <- 3
+max <- 10
 accuracy <- rep(0, max-min+1) #initialize with 0 accuracy
 k <- min:max
 for(x in k){
@@ -312,11 +310,13 @@ plot(k, accuracy[min:max], type = 'b', main = "Accuracy by k", xlab = "accuracy 
 ```{r}
 #Most accurate k = 11. REVISE AND BUILD THE K-NN MODEL WITH K = 11
 library('class')
-knn_model <- knn(train = train_Set, test = test_Set, train_Set$encode_state, k = 11)
+knn_model <- knn(train = train_Set, test = test_Set, train_Set$encode_state, k = 3)
 table(knn_model, test_Set$encode_state)
 # What is the percentage of correct prediction of sucessful projects?
 knn_accuracy <- mean(knn_model == test_Set$encode_state) * 100
 ```
+
+
 ```{r}
 #helper function to calculate the MAD. linear and logistic regression model has same amount of coefficients
 predict_value <- function(data, model, i) {
@@ -347,7 +347,6 @@ lin_MAD <- MAD(lin_model)
 lin_MSE <- mean(summary(lin_model)$residuals^ 2)
 paste("Linear Regression model has R-squared of", sumr_lin$r.squared, "which explains the model fits the training data well; has MAD of", lin_MAD, "which is actually higher than R-squared; has MSE of", lin_MSE)
 #Logistic model
-sumr_log <- summary(log_model)
 log_MAD <- MAD(log_model) 
 paste("Logistic Regression model has MAD of", log_MAD, "explains the model fits the training data well")
 ```
@@ -379,10 +378,22 @@ paste("Logistic Regression Model and Linear Regression Model has more false posi
 ```
 
 ```{r}
+#function get_accuracy: takes in a model and output the percentage of how correct the prediction 
+get_accuracy <- function(name, model) {
+  prediction <- predict(model, type = "response", newdata = test_Set)
+  prediction <- ifelse(prediction > 0.5,1,0) #set survival = 1
+#and determine its prediction accuracy (as a percentage correct).
+#by comparing the prediction to the test data set survival result
+correctPrediction <- mean(prediction == test_Set$encode_state)
+return(paste('Prediction Accuracy of', name, 'is', correctPrediction * 100, '%'))
+}
+```
+
+```{r}
 #COMPARE THE ACCURACY OF MODELS
 paste(get_accuracy("Multiple Linear Regression Model", lin_model), "with R-squared is 0.51")
 get_accuracy("Logistic Regression Model", log_model)
-paste("Prediction Accuracy of k-NN Model with k=6 is", knn_accuracy, "%")
+paste("Prediction Accuracy of k-NN Model with k=11 is", knn_accuracy, "%")
 paste("The regression models have very similar close results. Though linear regression model is has MAD higher than R-squared, both fit the training data well. Compared to k-NN, they are best predictors of a succesful project though has 10% false positive bias.")
 
 ```
