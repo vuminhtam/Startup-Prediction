@@ -321,22 +321,20 @@ knn_accuracy <- mean(knn_model == test_Set$encode_state) * 100
 
 ```{r}
 #helper function to calculate the MAD. linear and logistic regression model has same amount of coefficients
-predict_value <- function(data, model, i) {
-  return(model$coefficients[[1]]
-         + data$backers[i] * model$coefficients[[2]]
-         + data$usd.pledged[i] * model$coefficients[[3]]
-         + data$usd_pledged_real[i] * model$coefficients[[4]]
-         + data$duration[i] * model$coefficients[[5]]
-         + data$encode_country[i] * model$coefficients[[6]])
-}
-
 MAD <- function(model) {
   sum <- 0
-  n <- nrow(df)
+  n <- length(df)
   for(i in 1:n) {
-    sum <- sum + abs(predict_value(df,model, i) - df$encode_state[i])
+    predict <- model$coefficients[[1]]
+         + df$backers[i] * model$coefficients[[2]]
+         + df$usd_pledged_real[i] * model$coefficients[[3]]
+         + df$usd_goal_real[i] * model$coefficients[[4]]
+         + df$duration[i] * model$coefficients[[5]]
+         + df$encode_country[i] * model$coefficients[[6]]
+    
+    sum <- sum + abs(predict - df$encode_state[i])
   }
-  return(sum)
+  return(sum/n)
 }
 ```
 
