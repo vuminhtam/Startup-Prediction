@@ -17,7 +17,7 @@ output: html_notebook
 url1 <- "/Users/tamvu/DS4100/Kickstarter Predict/Startup Prediction/kickstarter-projects/ks-projects-201801.csv"
 raw_df <- as.data.frame(read.csv(url1), na.strings = c("", "NA", "undefined"))
 #original size is 350k+ which is too big data. I will take a sample 30% 
-raw_df <- raw_df[sample(nrow(raw_df) * 0.3), ]
+raw_df <- raw_df[sample(nrow(raw_df) * 0.4), ]
 ```
 
 ```{r}
@@ -294,7 +294,7 @@ library('class')
 #TUNING OF THE K-NN MODEL. 
 #Determine an optimal k by trying all values from 5 through 15 for k-NN algorithm against the cases in the validation data set. 
 #Source code: https://www.r-bloggers.com/using-knn-classifier-to-predict-whether-the-price-of-stock-will-increase/
-min <- 3
+min <- 2
 max <- 10
 accuracy <- rep(0, max-min+1) #initialize with 0 accuracy
 k <- min:max
@@ -330,13 +330,12 @@ predict_value <- function(data, model, i) {
 
 MAD <- function(model) {
   sum <- 0
-  n <- length(df)
+  n <- nrow(df)
   for(i in 1:n) {
     sum <- sum + abs(predict_value(df,model, i) - df$encode_state[i])
   }
-  return (sum/n)
+  return(sum)
 }
-
 ```
 
 ```{r}
@@ -393,7 +392,7 @@ return(paste('Prediction Accuracy of', name, 'is', correctPrediction * 100, '%')
 #COMPARE THE ACCURACY OF MODELS
 paste(get_accuracy("Multiple Linear Regression Model", lin_model), "with R-squared is 0.51")
 get_accuracy("Logistic Regression Model", log_model)
-paste("Prediction Accuracy of k-NN Model with k=11 is", knn_accuracy, "%")
+paste("Prediction Accuracy of k-NN Model with k=3 is", knn_accuracy, "%")
 paste("The regression models have very similar close results. Though linear regression model is has MAD higher than R-squared, both fit the training data well. Compared to k-NN, they are best predictors of a succesful project though has 10% false positive bias.")
 
 ```
@@ -407,17 +406,29 @@ active_df$duration <- as.numeric(as.Date(active_df$deadline) - as.Date(active_df
 active_df$encode_category <- as.numeric(active_df$main_category)
 active_df$encode_country <- as.numeric(active_df$country)
 #predict successfulness using linear regression
-prediction <- predict(lin_model, type = "response", newdata = active_df)
-pred_values <- ifelse(prediction > 0.5,1,0) 
+pred_values <- c()
+for(i in 1:nrow(active_df)) {
+  pred_values <- c(pred_values, predict_value(active_df, lin_model, i))
+}
+pred_values <- ifelse(pred_values > 0.5,1,0) 
 active_df$predict_state <- pred_values
 active_df
+```
+
+```{r}
+#PREDICT USING K-NN 
+active_df <- active_df[,!(names(active_df) %in% nonvars)]
+
+#predict successfulness using k-nn regression
+knn_pred <- knn(train = train_Set, test = active_df, cl = train_Set$encode_state, k = 3)
+active_df$knn_pred <- knn_pred
 ```
 
 ```{r}
 #get the average data
 n <- length(active_df)
 good_proj <- subset(active_df, active_df$predict_state == 1)
-percentage_succesful <- nrow(good_proj) / n
+percentage_succesful <- nrow(good_proj) / n * 100
 country <- names(which.max(table(good_proj$country)))
 avg_backers <- mean(good_proj$backers)
 avg_goal <- mean(good_proj$usd_goal_real)
