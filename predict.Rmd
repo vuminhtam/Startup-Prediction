@@ -10,11 +10,34 @@ output: html_notebook
 #to predict a likelihood of a project to be succesful on Kickstarter - that is fully funded 
 ```
 
+
 ```{r}
 #Import data set from url: https://www.kaggle.com/kemical/kickstarter-projects/data
 #data in 2018
 url1 <- "/Users/tamvu/DS4100/Kickstarter Predict/Startup Prediction/kickstarter-projects/ks-projects-201801.csv"
 raw_df <- as.data.frame(read.csv(url1), na.strings = c("", "NA", "undefined"))
+#original size is 350k+ which is too big data. I will take a sample 30% 
+raw_df <- raw_df[sample(nrow(raw_df) * 0.3), ]
+```
+
+```{r}
+library(RMySQL)
+library(DBI)
+#CONNECT TO MYSQL DATABASE
+awsURL <- "mypersonalinstance.cwoxgifwds2r.us-east-1.rds.amazonaws.com"
+con <- dbConnect(MySQL(),
+                 user = "vut1307",
+                 password = "Vuminhtam1307",
+                 host = awsURL,
+                 port = 3306,
+                 dbname = "kickstarterprojects")
+#import data into the database
+dbWriteTable(con, name = 'dataset', raw_df, overwrite = TRUE)
+```
+
+```{sql connection= con, output.var = df}
+-- RETRIEVE DATA FROM DATABASE
+SELECT * FROM dataset;
 ```
 
 ```{r}
@@ -25,61 +48,126 @@ raw_df <- as.data.frame(read.csv(url1), na.strings = c("", "NA", "undefined"))
 #the rest are features that can contribute to the state 
 #DEFINE OUTCOME "sucessful": 
 #states of a project recorded into the dataset
-df <- raw_df[sample(nrow(raw_df) * 0.3), ]
+df <- raw_df
 table(df$state)
 #I am only taking into account projects that are not live or suspended (because there is no result to it yet if so) 
 #projects that are not canceled (because the result is not one of the features in the dataset)
 #only projects that is determined with final state (either failed/sucessful)
 ```
 
+```{r}
+#EXPLORATORY DATA ANALYSIS: analyze to find important factors that indicate the outcome of successful or failed projects 
+#percentage of sucessful vs failed
+n <- nrow(subset(df, df$state == "successful" | df$state == "failed"))
+mytable <- as.data.frame(table(df$state) / n * 100)
+slices <- c(59.33, 40.67) 
+lbls <- paste(c( "failed", "successful"), slices, "%")
+pie(slices, labels = lbls, main="Pie Chart of Sucessful projects")
+```
+
+```{r}
+#RETRIEVE DATA TO EXPLORE 
+#What is the trendiest product being proposed on Kickstarter in the sample?
+dbGetQuery(con, '
+SELECT main_category AS most_popular_category, 
+AVG(backers) AS num_backers, 
+AVG(usd_goal_real) AS avg_goal,
+AVG(usd_pledged_real) AS avg_pledged,
+(SELECT country FROM dataset WHERE state = "successful" GROUP BY country ORDER BY count(*) DESC LIMIT 1) AS most_by_country,
+COUNT(*) AS number_proposed FROM dataset 
+  GROUP BY main_category
+  ORDER BY number_proposed DESC LIMIT 1;
+')
+```
+
+```{r}
+#What is the trendiest product being proposed on Kickstarter that is sucessful? 
+#What is the trendiest product being proposed on Kickstarter that is failed?
+dbGetQuery(con, '
+SELECT  * FROM
+(SELECT state, main_category AS most_popular_category, 
+AVG(backers) AS num_backers, 
+AVG(usd_goal_real) AS avg_goal,
+AVG(usd_pledged_real) AS avg_pledged, COUNT(*) AS number_proposed 
+FROM dataset WHERE state = "successful"
+GROUP BY main_category ORDER BY number_proposed DESC LIMIT 1) good
+UNION
+(SELECT state, main_category AS most_popular_category, 
+AVG(backers) AS num_backers, 
+AVG(usd_goal_real) AS avg_goal,
+AVG(usd_pledged_real) AS avg_pledged, COUNT(*) AS number_proposed 
+FROM dataset WHERE state = "failed"
+GROUP BY main_category ORDER BY number_proposed DESC LIMIT 1);
+')
+
+#as we can see from queries the most popular projects is Film and Video but they are most likely to fail.
+```
+
+```{r}
+#What is a good ammount of goal for a project to be less likely to fail? MUCH LOWER THAN THE FAILED PROJECTS 
+#Compare the successful projects compared to failed projects with same amount of backers but lower goals than average bad goals?
+dbGetQuery(con, '
+SELECT D1.main_category, D1.goal AS good_goal, D.avg_fail_goal FROM dataset D1
+JOIN (SELECT *, AVG(goal) AS avg_fail_goal FROM dataset D2 WHERE D2.state = "failed") D 
+ON D1.backers = D.backers AND D1.goal < D.avg_fail_goal
+WHERE  D1.state = "successful"
+ORDER BY good_goal DESC;
+')
+```
+
+```{sql connection= con, output.var = active_df}
+-- Get the projects that is active till most recently.
+SELECT * FROM dataset WHERE state = "live" AND YEAR(deadline) = 2018 ORDER BY month(deadline) DESC;
+```
+
 
 ```{r}
 #DATA PREPARATION: CLEANING, IMPUTATION
 #raw data has 378661 entries.
-#MISSING VALUES:
-#check if any variables that have too much missing values
-library(Amelia)
-missmap(df, main = "Missing values")
-#according to the draft of missing values there is no variable that has significant missing values
-#so disregard all entries that have any missing values of any variable 
-#which results in 374864 entries with total 15 features
+#MISSING VALUES: disregard all entries that have any missing values of any variable 
+#which results in 113k entries with total 15 features
 df <- na.omit(df)
 ```
 
 ```{r}
 #CONSTRUCT DATA: calculate the duration of the project
+#I want to disregard the effect of actual time because the result will depend on the events have actually happen at the time. 
 df$duration <- as.numeric(as.Date(df$deadline) - as.Date(df$launched))
-
 #SHAPE DATA:DUMMY CODE for the catergories
 #1 - Art, 2 - Comics, 3 - Crafts, 4 - Dance, 5 - Design, 6 - Fashion, 7 - Film & Video,
 #8 - Food, 9 - Games, 10 - Journalism, 11 - Music, 12 - Photography, 13 - Publishing, 14 - Technology
-as.data.frame(table(df$main_category))
 df$encode_category <- as.numeric(df$main_category)
-#DUMMY CODE FOR state: successful = 2, failed = 1
+#DUMMY CODE FOR state: successful = 1, failed = 0
 df$encode_state <- as.numeric(df$state)/2 - 1
 #DUMMY CODE FOR country
 df$encode_country <- as.numeric(df$country)
 ```
 
 ```{r}
-#FILTER DATA to sucessful/failed only. results in 331465 entries
+#CLEAN DATA to sucessful/failed only.
+#I am only taking into account projects that are not live or suspended (because there is no result to it yet if so) 
+#projects that are not canceled (because the result is not one of the features in the dataset)
+#only projects that is determined with final state (either failed/sucessful)
+# results in 331465 entries
 df <- subset(df, df$state == "failed" | df$state == "successful")
 #OMIT IRRELEVANT variables: ID and names. results in 13 variables: 12 features and 1 that is the state
-#I also omit (sub)category and only consider main_category
-nonvars <- c("ID","name", "category", "goal", "launched", "deadline", "pledged", "state", "currency", "main_category", "country")
+#I also omit (sub)category and only consider main_category to be more general
+#Omit time variables: deadline and launched
+#Money variable like goals and pledged I am choosing the columns in USD only so ommit currency and general goal and pledged columns
+nonvars <- c("ID","name", "category", "goal", "launched", "deadline", "pledged", "state", "currency", "main_category", "country", "usd.pledged")
 df <- df[,!(names(df) %in% nonvars)]
+head(df)
 ```
 
 
-
-
 ```{r}
-#EXPLORATORY DATA ANALYSIS: analyze to find important factors that indicate the outcome of successful or failed projects 
-#percentage of sucessful vs failed
-mytable <- as.data.frame(table(df$state) / nrow(df) * 100)
-slices <- c(59.62, 40.38) 
-lbls <- paste(c( "failed", "successful"), slices, "%")
-pie(slices, labels = lbls, main="Pie Chart of Sucessful projects")
+#EXPLORE DATA: CORRELATION ANALYSIS
+cor(df$usd_goal_real, df$encode_state)
+cor(df$backers, df$encode_state) 
+cor(df$duration, df$encode_state)
+cor(df$usd_pledged_real, df$encode_state)
+# the sucessful projects has lower funding goals, lower duration, 
+# higher number of backers, and higher pledged in USD
 ```
 
 
@@ -127,31 +215,36 @@ outlierKD <- function(dt, var, str) {
 #remove outliers of number of backers
 outlierKD(df,backers, "number of backers")
 #remove outliers of pledged number
-outlierKD(df, usd.pledged, "USD pledged")
 outlierKD(df,usd_pledged_real, "USD real pledged")
 outlierKD(df,usd_goal_real, "goal in USD")
 ```
 
 ```{r}
 #NORMALIZATION OF DATA
+#MIN-MAX NORMALIZATION of backers and duration of fundraising
+min_max_norm <- function(data) {
+  options(scipen = 999)
+  minX <- min(as.numeric(data)) 
+  maxX <- max(as.numeric(data))
+  data <- (as.numeric(data) - minX)/(maxX - minX)
+}
+min_max_norm(df$backers)
+min_max_norm(df$duration)
 
 ```
-
 
 ```{r}
-df <- na.omit(df)
-#CORRELATION ANALYSIS
-cor(df$usd_goal_real, df$encode_state)
-cor(df$backers, df$encode_state) 
-cor(df$duration, df$encode_state)
-cor(df$usd_pledged_real, df$encode_state)
-# the sucessful projects has lower funding goals, lower duration, 
-# higher number of backers, and higher pledged in USD
+#NORMALIZATION OF DATA
+#Z-SCORE STANDARDIZATION of goal and pledged
+df$usd_goal_real <- scale(df$usd_goal_real)
+df$usd_pledged_real <- scale(df$usd_pledged_real)
 ```
+
 
 ```{r}
 #DATA MODELING
-#Create a stratified sample where you randomly select 70% of successful projects to be part of the validation data set. 
+#Create a stratified sample where you randomly select 70% of successful and failed projects to be part of the validation data set.
+df <- na.omit(df)
 train_Set <- data.frame()
 set.seed(5)
 for(i in 0:1) {
@@ -164,18 +257,6 @@ test_Set <- df[!(as.numeric(row.names(df)) %in% as.numeric(row.names(train_Set))
 ```
 
 ```{r}
-#function get_accuracy: takes in a model and output the percentage of how correct the prediction 
-get_accuracy <- function(name, model) {
-  prediction <- predict(model, type = "response", newdata = test_Set)
-  prediction <- ifelse(prediction > 0.5,1,0) #set survival = 1
-#and determine its prediction accuracy (as a percentage correct).
-#by comparing the prediction to the test data set survival result
-correctPrediction <- mean(prediction == test_Set$encode_state)
-return(paste('Prediction Accuracy of', name, 'is', correctPrediction * 100, '%'))
-}
-```
-
-```{r}
 #MULTIPLE LINEAR REGRESSION MODEL
 lin_model <- lm(train_Set$encode_state ~ ., data = train_Set)
 summary(lin_model)
@@ -185,6 +266,9 @@ summary(lin_model)
 #REVISE THE LINEAR REGRESSION
 lin_model <- lm(train_Set$encode_state ~ . - encode_category, data = train_Set)
 summary(lin_model)
+#Ideal linear regression model for predicting the state of a project on Kickstarter in this data set 
+#include number of backers, USD pledged, USD goal, duration and country. 
+#All are significant with P-value < 0.05 
 ```
 
 ```{r}
@@ -194,16 +278,22 @@ summary(log_model)
 ```
 
 ```{r}
-#REVISE REGRESSION MODEL
+#REVISE LOGISTIC REGRESSION MODEL
 log_model <- glm(train_Set$encode_state ~ . - encode_category, data = train_Set)
 summary(log_model)
+#Ideal multiple regression model for predicting outcome of project in this data set include number of backers, USD pledged, USD goal, duration and country. All are significant with P-value < 0.05 
+```
+
+```{r}
+#From both regression models, category is not a significant idicator of the outcome - which was my hypothesis when I started the project. A protential reason is that the category is only significant regarding the events/trend of the time of the project. For example waste-free trend will elevate a chance of success for a environmental-friendly product like beewax wraper (Bee's Wrap). 
 ```
 
 
+
+
 ```{r}
-df <- na.omit(df)
 library('class')
-#TEST OUT K-NN WITH DIFFERENT K
+#TUNING OF THE K-NN MODEL. 
 #Determine an optimal k by trying all values from 5 through 15 for k-NN algorithm against the cases in the validation data set. 
 #Source code: https://www.r-bloggers.com/using-knn-classifier-to-predict-whether-the-price-of-stock-will-increase/
 min <- 5
@@ -220,28 +310,113 @@ plot(k, accuracy[min:max], type = 'b', main = "Accuracy by k", xlab = "accuracy 
 ```
 
 ```{r}
-#Most accurate k = 6. REVISE AND BUILD THE K-NN MODEL WITH K = 6
-pred_validation <- knn(train = train_Set, test = test_Set, train_Set$encode_state, k = 6)
-table(pred_validation, test_Set$encode_state)
-# What is the percentage of correct classifications?
-knn_accuracy <- mean(pred_validation == test_Set$encode_state) * 100
+#Most accurate k = 11. REVISE AND BUILD THE K-NN MODEL WITH K = 11
+library('class')
+knn_model <- knn(train = train_Set, test = test_Set, train_Set$encode_state, k = 11)
+table(knn_model, test_Set$encode_state)
+# What is the percentage of correct prediction of sucessful projects?
+knn_accuracy <- mean(knn_model == test_Set$encode_state) * 100
+```
+```{r}
+#helper function to calculate the MAD. linear and logistic regression model has same amount of coefficients
+predict_value <- function(data, model, i) {
+  return(model$coefficients[[1]]
+         + data$backers[i] * model$coefficients[[2]]
+         + data$usd.pledged[i] * model$coefficients[[3]]
+         + data$usd_pledged_real[i] * model$coefficients[[4]]
+         + data$duration[i] * model$coefficients[[5]]
+         + data$encode_country[i] * model$coefficients[[6]])
+}
+
+MAD <- function(model) {
+  sum <- 0
+  n <- length(df)
+  for(i in 1:n) {
+    sum <- sum + abs(predict_value(df,model, i) - df$encode_state[i])
+  }
+  return (sum/n)
+}
 
 ```
 
 ```{r}
-#COMPARE THE MODELS
+#EVALUATE THE FIT OF MODELS
+#Linear model: 
+sumr_lin <- summary(lin_model)
+lin_MAD <- MAD(lin_model)
+lin_MSE <- mean(summary(lin_model)$residuals^ 2)
+paste("Linear Regression model has R-squared of", sumr_lin$r.squared, "which explains the model fits the training data well; has MAD of", lin_MAD, "which is actually higher than R-squared; has MSE of", lin_MSE)
+#Logistic model
+sumr_log <- summary(log_model)
+log_MAD <- MAD(log_model) 
+paste("Logistic Regression model has MAD of", log_MAD, "explains the model fits the training data well")
+```
+
+```{r}
+#A function to determine if the model has bias (false positive), e.g predicting a project failed when they actually succeeded
+bias <- function(model) {
+  prediction <- predict(model, type = "response", newdata = test_Set)
+prediction <- ifelse(prediction > 0.5,1,0) #set survival = 1
+combine <- data.frame(prediction, test_Set$encode_state)
+#filter out all errors the model made
+error <- subset(combine, combine$prediction != combine$test_Set.encode_state)
+#false positive are the errors with people who are actual survived
+falsePositive <- subset(error, error$test_Set.encode_state == 1)
+falseNegative <- subset(error, error$test_Set.encode_state == 0)
+return(c(nrow(falsePositive)/length(prediction)*100, nrow(falseNegative)/length(prediction)*100))
+}
+
+```
+
+```{r}
+#COMPARE BIAS
+falsePos <- bias(log_model)[1] #2%
+falseNeg <- bias(log_model)[2] #10%
+falsePos_lin <- bias(lin_model)[1] #2%
+falseNeg_lin <- bias(lin_model)[2] #10%
+paste("Logistic Regression Model and Linear Regression Model has more false positive. Hence they are bias towards predicting a project fail")
+
+```
+
+```{r}
+#COMPARE THE ACCURACY OF MODELS
 paste(get_accuracy("Multiple Linear Regression Model", lin_model), "with R-squared is 0.51")
 get_accuracy("Logistic Regression Model", log_model)
 paste("Prediction Accuracy of k-NN Model with k=6 is", knn_accuracy, "%")
+paste("The regression models have very similar close results. Though linear regression model is has MAD higher than R-squared, both fit the training data well. Compared to k-NN, they are best predictors of a succesful project though has 10% false positive bias.")
+
 ```
 
 ```{r}
-#sql queries
-#What is the trendiest product being proposed on Kickstarter over 2015 - 2018?
-hist(df$encode_category)
-#What is the trendiest product being proposed on Kickstarter that is sucessful? 
-
+#PREDICT THE LIVE PROJECTS USING MULTIPLE LINEAR REGRESSION: 
+#predict the active projects that were live until last month
+#format the data frame
+active_df <- subset(raw_df, raw_df$ID %in% active_df$ID)
+active_df$duration <- as.numeric(as.Date(active_df$deadline) - as.Date(active_df$launched))
+active_df$encode_category <- as.numeric(active_df$main_category)
+active_df$encode_country <- as.numeric(active_df$country)
+#predict successfulness using linear regression
+prediction <- predict(lin_model, type = "response", newdata = active_df)
+pred_values <- ifelse(prediction > 0.5,1,0) 
+active_df$predict_state <- pred_values
+active_df
 ```
+
+```{r}
+#get the average data
+n <- length(active_df)
+good_proj <- subset(active_df, active_df$predict_state == 1)
+percentage_succesful <- nrow(good_proj) / n
+country <- names(which.max(table(good_proj$country)))
+avg_backers <- mean(good_proj$backers)
+avg_goal <- mean(good_proj$usd_goal_real)
+avg_pledged <- mean(good_proj$usd_pledged_real)
+avg_duration <- mean(good_proj$duration)
+#INTERPRETATION OF RESULTS: 
+paste("On the prediction results of active projects,", percentage_succesful, "% are successful.")
+paste("From my average calculation, in order to be successful project on Kickstarter, the creator should aim to launch in ", country, "with a good amount of backers of at least", ceiling(avg_backers), "setting a goal lower than $", avg_goal, "and a duration of fund-raising as short as", floor(avg_duration), "days")
+```
+
 
 
 
