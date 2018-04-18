@@ -1,6 +1,8 @@
 ---
 title: "KickStart Startup Trend Prediction"
-output: html_notebook
+output:
+  html_document:
+    df_print: paged
 ---
 ```{r}
 #UNDERSTAND THE BUSINESS
@@ -358,7 +360,7 @@ prediction <- ifelse(prediction > 0.5,1,0) #set survival = 1
 combine <- data.frame(prediction, test_Set$encode_state)
 #filter out all errors the model made
 error <- subset(combine, combine$prediction != combine$test_Set.encode_state)
-#false positive are the errors with people who are actual survived
+#false positive are predicting a project failed when they actually succeeded
 falsePositive <- subset(error, error$test_Set.encode_state == 1)
 falseNegative <- subset(error, error$test_Set.encode_state == 0)
 return(c(nrow(falsePositive)/length(prediction)*100, nrow(falseNegative)/length(prediction)*100))
@@ -417,16 +419,16 @@ active_df
 
 ```{r}
 #PREDICT USING K-NN 
-active_df <- active_df[,!(names(active_df) %in% nonvars)]
+active_df_knn <- active_df[,!(names(active_df) %in% nonvars)]
 
 #predict successfulness using k-nn regression
-knn_pred <- knn(train = train_Set, test = active_df, cl = train_Set$encode_state, k = 3)
-active_df$knn_pred <- knn_pred
+knn_pred <- knn(train = train_Set, test = active_df_knn, cl = train_Set$encode_state, k = 3)
+active_df_knn$knn_pred <- knn_pred
 ```
 
 ```{r}
-#get the average data
-n <- length(active_df)
+#get the average data of linear results
+n <- nrow(active_df)
 good_proj <- subset(active_df, active_df$predict_state == 1)
 percentage_succesful <- nrow(good_proj) / n * 100
 country <- names(which.max(table(good_proj$country)))
@@ -435,9 +437,27 @@ avg_goal <- mean(good_proj$usd_goal_real)
 avg_pledged <- mean(good_proj$usd_pledged_real)
 avg_duration <- mean(good_proj$duration)
 #INTERPRETATION OF RESULTS: 
-paste("On the prediction results of active projects,", percentage_succesful, "% are successful.")
+paste("LINEAR REGRESSION PREDICTS:\n
+On the prediction results of active projects,", percentage_succesful, "% are successful.")
 paste("From my average calculation, in order to be successful project on Kickstarter, the creator should aim to launch in ", country, "with a good amount of backers of at least", ceiling(avg_backers), "setting a goal lower than $", avg_goal, "and a duration of fund-raising as short as", floor(avg_duration), "days")
 ```
+
+```{r}
+#get the average data of k-nn results
+n <- nrow(active_df)
+good_proj <- subset(active_df, active_df_knn$knn_pred == 1)
+percentage_succesful <- nrow(good_proj) / n * 100
+country <- names(which.max(table(good_proj$country)))
+avg_backers <- mean(good_proj$backers)
+avg_goal <- mean(good_proj$usd_goal_real)
+avg_pledged <- mean(good_proj$usd_pledged_real)
+avg_duration <- mean(good_proj$duration)
+#INTERPRETATION OF RESULTS: 
+paste("k-NN with k=3 PREDICTS:\n
+      On the prediction results of active projects,", percentage_succesful, "% are successful.")
+paste("From my average calculation, in order to be successful project on Kickstarter, the creator should aim to launch in ", country, "with a good amount of backers of at least", ceiling(avg_backers), "setting a goal lower than $", avg_goal, "and a duration of fund-raising as short as", floor(avg_duration), "days")
+```
+
 
 
 
